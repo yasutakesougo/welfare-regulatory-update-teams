@@ -1,0 +1,16 @@
+{
+  "EvidenceId": "EV-SYN-B-001",
+  "SourceAuthority": "OFFICIAL_GOVERNMENT",
+  "DocumentTitle": "Synthetic disability welfare notice",
+  "DocumentType": "NOTICE",
+  "PublishedAt": "2026-09-01T00:00:00Z",
+  "EffectiveAt": "2026-09-10T00:00:00Z",
+  "SourceUrl": "https://example.invalid/synthetic/notice-b-001",
+  "CanonicalSourceUrl": "https://example.invalid/synthetic/notice-b-001",
+  "ContentHash": "16a1f8660fcc07fb64ad77f10f9b4f233e1d43749721729852588573efef27a7",
+  "RetrievedAt": "2026-09-01T01:00:00Z",
+  "ApplicableServices": ["生活介護"],
+  "EvidenceStatus": "OFFICIAL_PENDING_REVIEW",
+  "Jurisdiction": "JP-SYNTHETIC",
+  "materialText": "生活介護の運用を変更する。施行日は2026年9月10日。"
+}
