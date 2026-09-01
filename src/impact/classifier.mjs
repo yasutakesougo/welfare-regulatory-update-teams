@@ -23,6 +23,7 @@ const MATERIAL_TYPES = new Set(Object.values(MATERIAL_TYPE));
 const EXECUTION_MODES = new Set(Object.values(EXECUTION_MODE));
 const JURISDICTION_RELATIONS = new Set(Object.values(JURISDICTION_RELATION));
 const SIGNAL_KINDS = new Set(Object.values(SIGNAL_KIND));
+const SOURCE_AUTHORITIES = new Set(['OFFICIAL_GOVERNMENT', 'OFFICIAL_LOCAL_GOVERNMENT', 'OFFICIAL_OTHER_PRIMARY']);
 
 function nonEmptyString(value) {
   return typeof value === 'string' && value.length > 0;
@@ -45,6 +46,7 @@ function validateEvidence(evidence) {
     issues.push('ApplicableServices');
   }
   if (!EVIDENCE_STATUSES.has(evidence.EvidenceStatus)) issues.push('EvidenceStatus');
+  if (!SOURCE_AUTHORITIES.has(evidence.SourceAuthority)) issues.push('SourceAuthority');
   if (!HASH_RE.test(evidence.ContentHash ?? '')) issues.push('ContentHash');
   if (!validDate(evidence.PublishedAt) || !validDate(evidence.RetrievedAt)) issues.push('date');
   if (evidence.EffectiveAt !== undefined && evidence.EffectiveAt !== null && !validDate(evidence.EffectiveAt)) issues.push('EffectiveAt');
@@ -161,13 +163,14 @@ function buildSourceFactSummary(signals) {
   return texts.join('\n');
 }
 
-function baseResult(evidence, relevance, eligibility, uncertaintyFlags, impactId) {
+function baseResult(evidence, targetContext, relevance, eligibility, uncertaintyFlags, impactId) {
+  const relevantServices = relevance === RELEVANCE.RELEVANT ? serviceIntersection(evidence, targetContext) : [];
   return {
     ImpactId: impactId,
     EvidenceId: evidence.EvidenceId,
     eligibility,
     relevance,
-    RelevantServices: Object.freeze([...evidence.ApplicableServices]),
+    RelevantServices: Object.freeze([...relevantServices]),
     RelevantRoles: Object.freeze([]),
     ...(evidence.EffectiveAt ? { EffectiveAt: evidence.EffectiveAt } : {}),
     UncertaintyFlags: Object.freeze([...uncertaintyFlags]),
@@ -176,12 +179,12 @@ function baseResult(evidence, relevance, eligibility, uncertaintyFlags, impactId
   };
 }
 
-function reviewOnly(evidence, relevance, flags, impactId) {
-  return Object.freeze(baseResult(evidence, relevance, ELIGIBILITY.REVIEW_ONLY, flags, impactId));
+function reviewOnly(evidence, targetContext, relevance, flags, impactId) {
+  return Object.freeze(baseResult(evidence, targetContext, relevance, ELIGIBILITY.REVIEW_ONLY, flags, impactId));
 }
 
-function notEligible(evidence, relevance, flags, impactId) {
-  return Object.freeze(baseResult(evidence, relevance, ELIGIBILITY.NOT_ELIGIBLE, flags, impactId));
+function notEligible(evidence, targetContext, relevance, flags, impactId) {
+  return Object.freeze(baseResult(evidence, targetContext, relevance, ELIGIBILITY.NOT_ELIGIBLE, flags, impactId));
 }
 
 export function assessImpact(input, options = {}) {
@@ -210,33 +213,34 @@ export function assessImpact(input, options = {}) {
   if (!nonEmptyString(impactId)) throw new TypeError('idGenerator must return non-empty string');
 
   const uncertainty = [];
+  if (evidence.EvidenceStatus === EVIDENCE_STATUS.OFFICIAL_PENDING_REVIEW) uncertainty.push(UNCERTAINTY.EVIDENCE_NOT_VERIFIED);
   if (!evidence.EffectiveAt) uncertainty.push(UNCERTAINTY.EFFECTIVE_DATE_UNKNOWN);
   if (targetContext.jurisdictionRelation === JURISDICTION_RELATION.UNKNOWN) uncertainty.push(UNCERTAINTY.JURISDICTION_UNKNOWN);
 
   if (isCurrentStateConflict(evidence, currentState)) {
     uncertainty.push(UNCERTAINTY.CURRENT_STATE_CONFLICT);
-    return reviewOnly(evidence, RELEVANCE.UNKNOWN, uncertainty, impactId);
+    return reviewOnly(evidence, targetContext, RELEVANCE.UNKNOWN, uncertainty, impactId);
   }
 
   if (evidence.EvidenceStatus === EVIDENCE_STATUS.SUPERSEDED || evidence.EvidenceStatus === EVIDENCE_STATUS.WITHDRAWN ||
       currentState.state === CURRENT_STATE.SUPERSEDED || currentState.state === CURRENT_STATE.WITHDRAWN) {
-    return notEligible(evidence, RELEVANCE.NOT_RELEVANT, uncertainty, impactId);
+    return notEligible(evidence, targetContext, RELEVANCE.NOT_RELEVANT, uncertainty, impactId);
   }
 
   if (currentState.state === CURRENT_STATE.UNRESOLVED) {
     uncertainty.push(UNCERTAINTY.SUPERSESSION_UNRESOLVED);
-    return reviewOnly(evidence, RELEVANCE.UNKNOWN, uncertainty, impactId);
+    return reviewOnly(evidence, targetContext, RELEVANCE.UNKNOWN, uncertainty, impactId);
   }
 
   const relevance = classifyRelevance(evidence, targetContext);
   if (relevance === RELEVANCE.NOT_RELEVANT) {
-    return notEligible(evidence, relevance, uncertainty, impactId);
+    return notEligible(evidence, targetContext, relevance, uncertainty, impactId);
   }
   if (relevance === RELEVANCE.POSSIBLY_RELEVANT) uncertainty.push(UNCERTAINTY.RELEVANCE_UNCERTAIN);
 
   if (!material) {
     uncertainty.push(UNCERTAINTY.MATERIAL_UNAVAILABLE);
-    return reviewOnly(evidence, relevance, uncertainty, impactId);
+    return reviewOnly(evidence, targetContext, relevance, uncertainty, impactId);
   }
 
   const idMismatch = material.EvidenceId !== evidence.EvidenceId;
@@ -244,29 +248,25 @@ export function assessImpact(input, options = {}) {
   const fullTextHashMismatch = material.materialType === MATERIAL_TYPE.FULL_TEXT && sha256(material.materialText) !== evidence.ContentHash;
   if (idMismatch || declaredHashMismatch || fullTextHashMismatch) {
     uncertainty.push(UNCERTAINTY.MATERIAL_MISMATCH);
-    return reviewOnly(evidence, relevance, uncertainty, impactId);
+    return reviewOnly(evidence, targetContext, relevance, uncertainty, impactId);
   }
 
   if (material.materialType === MATERIAL_TYPE.SUPPLIED_EXCERPT ||
       (material.materialType === MATERIAL_TYPE.SYNTHETIC_FIXTURE && executionMode === EXECUTION_MODE.NORMAL)) {
-    return reviewOnly(evidence, relevance, uncertainty, impactId);
+    return reviewOnly(evidence, targetContext, relevance, uncertainty, impactId);
   }
 
   const signals = validateSignals(groundedSignals, material.materialText);
   if (signals.length === 0) {
     uncertainty.push(UNCERTAINTY.SOURCE_FACT_UNAVAILABLE);
-    return reviewOnly(evidence, relevance, uncertainty, impactId);
-  }
-
-  if (evidence.EvidenceStatus === EVIDENCE_STATUS.OFFICIAL_PENDING_REVIEW) {
-    uncertainty.push(UNCERTAINTY.EVIDENCE_NOT_VERIFIED);
+    return reviewOnly(evidence, targetContext, relevance, uncertainty, impactId);
   }
 
   let impactLevel;
   if (relevance === RELEVANCE.POSSIBLY_RELEVANT) {
     impactLevel = IMPACT_LEVEL.CHECK;
   } else {
-    const hasUrgencySignal = signals.some((s) => s.kind === SIGNAL_KIND.URGENCY || s.kind === SIGNAL_KIND.DEADLINE);
+    const hasUrgencySignal = signals.some((s) => s.kind === SIGNAL_KIND.URGENCY);
     const hasActionSignal = signals.some((s) => s.kind === SIGNAL_KIND.OBLIGATION || s.kind === SIGNAL_KIND.CHANGE);
     if (hasUrgencySignal || dateUrgency(evidence, assessmentPolicy)) {
       impactLevel = IMPACT_LEVEL.URGENT_REVIEW;
@@ -283,7 +283,7 @@ export function assessImpact(input, options = {}) {
   const teamsDraft = renderTeamsDraft({ evidence, targetContext, impactLevel, sourceFactSummary, uncertaintyFlags: uncertainty });
 
   return Object.freeze({
-    ...baseResult(evidence, relevance, ELIGIBILITY.ELIGIBLE_INTERNAL_DRAFT, uncertainty, impactId),
+    ...baseResult(evidence, targetContext, relevance, ELIGIBILITY.ELIGIBLE_INTERNAL_DRAFT, uncertainty, impactId),
     ImpactLevel: impactLevel,
     SourceFactSummary: sourceFactSummary,
     PotentialImpact: potentialImpact,
