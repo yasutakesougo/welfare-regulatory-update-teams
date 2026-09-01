@@ -1,0 +1,12 @@
+{
+  "name": "welfare-regulatory-update-teams",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test"
+  }
+}
