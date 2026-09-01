@@ -223,3 +223,44 @@ test('current-state conflict is REVIEW_ONLY and never produces a normal draft', 
   assert.ok(result.UncertaintyFlags.includes(UNCERTAINTY.CURRENT_STATE_CONFLICT));
   assert.equal(result.TeamsDraft, undefined);
 });
+
+test('pending Evidence preserves EVIDENCE_NOT_VERIFIED on missing-material REVIEW_ONLY path', () => {
+  const input = base();
+  input.evidence = { ...input.evidence, EvidenceStatus: 'OFFICIAL_PENDING_REVIEW' };
+  input.material = null;
+  const result = assessImpact(input, opt);
+  assert.equal(result.eligibility, ELIGIBILITY.REVIEW_ONLY);
+  assert.ok(result.UncertaintyFlags.includes(UNCERTAINTY.EVIDENCE_NOT_VERIFIED));
+  assert.ok(result.UncertaintyFlags.includes(UNCERTAINTY.MATERIAL_UNAVAILABLE));
+});
+
+test('discovery-only SourceAuthority is rejected', () => {
+  const input = base();
+  input.evidence = { ...input.evidence, SourceAuthority: 'BLOG' };
+  assert.throws(() => assessImpact(input, opt), (error) => {
+    assert.ok(error instanceof SliceBValidationError);
+    assert.equal(error.code, 'INVALID_EVIDENCE');
+    assert.ok(error.issues.includes('SourceAuthority'));
+    return true;
+  });
+});
+
+test('DEADLINE signal alone does not bypass urgency future-window policy', () => {
+  const input = base();
+  input.assessmentPolicy = { assessmentAt: '2026-09-01T00:00:00Z', urgentWithinDays: 0 };
+  input.groundedSignals = [{ kind: 'DEADLINE', text: '施行日は2026年9月10日。', startOffset: idxDeadline, endOffset: idxDeadline + '施行日は2026年9月10日。'.length }];
+  const result = assessImpact(input, opt);
+  assert.equal(result.ImpactLevel, IMPACT_LEVEL.INFO);
+});
+
+test('RelevantServices reports exact intersection only', () => {
+  const input = base();
+  input.evidence = { ...input.evidence, ApplicableServices: ['生活介護', '共同生活援助'] };
+  const result = assessImpact(input, opt);
+  assert.deepEqual(result.RelevantServices, ['生活介護']);
+
+  input.targetContext = { ...input.targetContext, targetServices: ['就労継続支援B型'] };
+  const uncertain = assessImpact(input, opt);
+  assert.equal(uncertain.relevance, RELEVANCE.POSSIBLY_RELEVANT);
+  assert.deepEqual(uncertain.RelevantServices, []);
+});
