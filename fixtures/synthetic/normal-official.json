@@ -1,0 +1,12 @@
+{
+  "sourceUrl": "https://example.invalid/regulations/notice-001",
+  "sourceAuthority": "OFFICIAL_GOVERNMENT",
+  "documentTitle": "Synthetic welfare service notice",
+  "documentType": "NOTICE",
+  "publishedAt": "2026-08-31T00:00:00+09:00",
+  "retrievedAt": "2026-09-01T09:00:00+09:00",
+  "rawContent": "Synthetic official notice body. No real person, tenant, team, or channel data.",
+  "jurisdiction": "JP-SYNTHETIC",
+  "applicableServices": ["LIFE_CARE"],
+  "unexpectedField": "ignored-in-v1"
+}
