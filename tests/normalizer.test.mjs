@@ -76,7 +76,18 @@ test('explicit shared sourceDocumentId can resolve identity across different URL
   assert.equal(second.comparison, COMPARISON.SAME_CONTENT);
 });
 
-test('A-6 normalizer never creates VERIFIED_OFFICIAL', () => {
+test('A-6 discovery-only source is rejected from authoritative normalization', () => {
+  assert.throws(
+    () => normalizeEvidence({ ...baseInput, sourceAuthority: 'BLOG' }, { idGenerator: stableId }),
+    (error) => {
+      assert.equal(error instanceof EvidenceValidationError, true);
+      assert.match(error.issues.join('\n'), /sourceAuthority/);
+      return true;
+    },
+  );
+});
+
+test('normalizer never creates VERIFIED_OFFICIAL', () => {
   const result = normalize({ ...baseInput, verifiedOfficial: true });
   assert.equal(result.evidence.EvidenceStatus, EVIDENCE_STATUS.OFFICIAL_PENDING_REVIEW);
 });
