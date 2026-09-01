@@ -4,6 +4,14 @@ export const EVIDENCE_STATUS = Object.freeze({
   OFFICIAL_PENDING_REVIEW: 'OFFICIAL_PENDING_REVIEW',
 });
 
+export const SOURCE_AUTHORITY = Object.freeze({
+  OFFICIAL_GOVERNMENT: 'OFFICIAL_GOVERNMENT',
+  OFFICIAL_LOCAL_GOVERNMENT: 'OFFICIAL_LOCAL_GOVERNMENT',
+  OFFICIAL_OTHER_PRIMARY: 'OFFICIAL_OTHER_PRIMARY',
+});
+
+const AUTHORITATIVE_SOURCE_AUTHORITIES = new Set(Object.values(SOURCE_AUTHORITY));
+
 export const COMPARISON = Object.freeze({
   NEW: 'NEW',
   SAME_CONTENT: 'SAME_CONTENT',
@@ -76,6 +84,14 @@ export function validateAuthoritativeInput(input) {
     issues.push('applicableServices is required and must be an array');
   } else if (input.applicableServices.some((value) => typeof value !== 'string')) {
     issues.push('applicableServices must contain strings only');
+  }
+
+  if (
+    typeof input.sourceAuthority === 'string' &&
+    input.sourceAuthority.length > 0 &&
+    !AUTHORITATIVE_SOURCE_AUTHORITIES.has(input.sourceAuthority)
+  ) {
+    issues.push('sourceAuthority must identify an approved authoritative primary source');
   }
 
   if (typeof input.sourceUrl === 'string' && input.sourceUrl.length > 0) {
